@@ -614,6 +614,7 @@ func render(w io.Writer, pkgs []*apiPackage, config generatorConfig) error {
 		"hiddenMember":     func(m types.Member) bool { return hiddenMember(m, config) },
 		"isLocalType":      isLocalType,
 		"isOptionalMember": isOptionalMember,
+		"regexpReplaceAll": regexpReplaceAll,
 	}).ParseGlob(filepath.Join(*flTemplateDir, "*.tpl"))
 	if err != nil {
 		return errors.Wrap(err, "parse error")
@@ -625,4 +626,8 @@ func render(w io.Writer, pkgs []*apiPackage, config generatorConfig) error {
 		"config":    config,
 		"gitCommit": strings.TrimSpace(string(gitCommit)),
 	}), "template execution error")
+}
+
+func regexpReplaceAll(src, pattern, repl string) string {
+	return regexp.MustCompile(pattern).ReplaceAllString(src, repl)
 }

@@ -1,5 +1,7 @@
 module github.com/ahmetb/gen-crd-api-reference-docs
 
+go 1.14
+
 require (
 	github.com/pkg/errors v0.8.1
 	github.com/pmezard/go-difflib v1.0.0 // indirect
