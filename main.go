@@ -29,11 +29,13 @@ import (
 
 var (
 	flConfig      = flag.String("config", "", "path to config file")
-	flAPIDir      = flag.String("api-dir", "", "api directory (or import path), point this to pkg/apis")
+	flAPIDir      = flag.String("api-dir", "", "api directory (or import path), point this to pkg/apis. this can be a comma-separated list of multiple dirs to combine. types will be merged with those coming first in the list taking precedence over types with the same name found in later dirs.")
 	flTemplateDir = flag.String("template-dir", "template", "path to template/ dir")
 
 	flHTTPAddr = flag.String("http-addr", "", "start an HTTP server on specified addr to view the result (e.g. :8080)")
 	flOutFile  = flag.String("out-file", "", "path to output file to save the result")
+
+	flHideTypes = flag.String("hide-types", "", "extra hideTypePatterns supplied on the command line")
 )
 
 const (
@@ -124,8 +126,13 @@ func main() {
 		klog.Fatalf("failed to parse config file: %+v", err)
 	}
 
+	if *flHideTypes != "" {
+		config.HideTypePatterns = append(config.HideTypePatterns, strings.Split(*flHideTypes, ",")...)
+	}
+
 	klog.Infof("parsing go packages in directory %s", *flAPIDir)
-	pkgs, err := parseAPIPackages(*flAPIDir)
+	apiDirs := strings.Split(*flAPIDir, ",")
+	pkgs, err := parseAPIPackages(apiDirs)
 	if err != nil {
 		klog.Fatal(err)
 	}
@@ -195,11 +202,13 @@ func groupName(pkg *types.Package) string {
 	return ""
 }
 
-func parseAPIPackages(dir string) ([]*types.Package, error) {
+func parseAPIPackages(dirs []string) ([]*types.Package, error) {
 	b := parser.New()
-	// the following will silently fail (turn on -v=4 to see logs)
-	if err := b.AddDirRecursive(*flAPIDir); err != nil {
-		return nil, err
+	for _, dir := range dirs {
+		// the following will silently fail (turn on -v=4 to see logs)
+		if err := b.AddDirRecursive(dir); err != nil {
+			return nil, err
+		}
 	}
 	scan, err := b.FindTypes()
 	if err != nil {
@@ -267,7 +276,10 @@ func combineAPIPackages(pkgs []*types.Package) ([]*apiPackage, error) {
 				GoPackages: []*types.Package{pkg},
 			}
 		} else {
-			v.Types = append(v.Types, typeList...)
+			// Add new types only if a type of the same name wasn't already
+			// added by a different package. This makes the list in the -api-dir
+			// flag ordered by priority.
+			v.Types = mergeTypes(v.Types, typeList)
 			v.GoPackages = append(v.GoPackages, pkg)
 		}
 	}
@@ -276,6 +288,22 @@ func combineAPIPackages(pkgs []*types.Package) ([]*apiPackage, error) {
 		out = append(out, v)
 	}
 	return out, nil
+}
+
+func mergeTypes(dst, src []*types.Type) []*types.Type {
+	names := map[string]bool{}
+	for _, t := range dst {
+		names[t.Name.Name] = true
+	}
+
+	for _, t := range src {
+		if names[t.Name.Name] {
+			continue
+		}
+		dst = append(dst, t)
+	}
+
+	return dst
 }
 
 // isVendorPackage determines if package is coming from vendor/ dir.
